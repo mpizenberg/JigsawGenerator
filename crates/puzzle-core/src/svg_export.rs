@@ -5,6 +5,11 @@
 
 use kurbo::{Affine, Point};
 
+/// Epilog's conservative vector-cut line weight: 0.001 inch = 0.072 pt.
+/// Export this as a unitless length: the document viewBox maps 1 unit to 1 mm.
+/// See https://support.epiloglaser.com/laser-machine/legend-36ext/usage-and-operation/system-requirements-setup/sending-vector-jobs-from-adobe-illustrator/
+pub const DEFAULT_SVG_STROKE_MM: f64 = 0.0254;
+
 /// Compute the affine transform from edge-local to global coordinates.
 ///
 /// Edge-local: origin at edge start, x-axis along edge direction.
@@ -24,11 +29,12 @@ pub fn edge_transform(start: Point, end: Point) -> Affine {
 pub(crate) fn build_svg_document(path_data: &str, width_mm: f64, height_mm: f64) -> String {
     format!(
         "<svg xmlns='http://www.w3.org/2000/svg' width='{w}mm' height='{h}mm' viewBox='0 0 {w} {h}'>\
-         <path d='{d}' stroke='#000000' stroke-width='0.001mm' fill='none'/>\
+         <path d='{d}' stroke='#000000' stroke-width='{stroke}' fill='none'/>\
          </svg>",
         w = width_mm,
         h = height_mm,
         d = path_data,
+        stroke = DEFAULT_SVG_STROKE_MM,
     )
 }
 
@@ -64,6 +70,9 @@ mod tests {
         assert!(svg.contains("viewBox='0 0 50 30'"));
         assert!(svg.contains("xmlns='http://www.w3.org/2000/svg'"));
         assert!(svg.contains("stroke='#000000'"));
+        assert!(svg.contains("stroke-width='0.0254'"));
+        assert!((DEFAULT_SVG_STROKE_MM / 25.4 - 0.001).abs() < 1e-12);
+        assert_eq!(svg.matches("<path ").count(), 1);
         assert!(svg.contains("fill='none'"));
         assert!(svg.contains("d='M 0 0 L 10 10'"));
     }

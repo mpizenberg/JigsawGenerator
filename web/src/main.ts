@@ -63,6 +63,53 @@ let unitSelect: HTMLSelectElement;
 let seedInput: HTMLInputElement;
 let pieceCount: HTMLElement;
 let errorDisplay: HTMLElement;
+let exportStrokeSelect: HTMLSelectElement;
+
+const SVG_EXPORT_PROFILES = {
+  epilog: {
+    widthMm: 0.0254,
+    note: "0.001 in = 0.0254 mm = 0.072 pt. A conservative Epilog cut-line setting; check that your driver preview recognizes the paths as vectors.",
+    suffix: "",
+  },
+  point: {
+    widthMm: 25.4 / 720,
+    note: "0.1 pt ≈ 0.0353 mm. Wider than Epilog’s current Illustrator guideline; vector recognition depends on your software and driver.",
+    suffix: "-0.1pt",
+  },
+  editing: {
+    widthMm: 0.25,
+    note: "Thicker strokes for editing and review. Switch to an Epilog cut export before sending the design to the laser.",
+    suffix: "-editing",
+  },
+} as const;
+
+function exportProfileKey(): keyof typeof SVG_EXPORT_PROFILES {
+  const value = exportStrokeSelect.value;
+  return Object.hasOwn(SVG_EXPORT_PROFILES, value)
+    ? value as keyof typeof SVG_EXPORT_PROFILES
+    : "epilog";
+}
+
+function syncExportControls(): void {
+  const key = exportProfileKey();
+  document.getElementById("export-stroke-note")!.textContent = SVG_EXPORT_PROFILES[key].note;
+  document.getElementById("download")!.textContent = key === "editing"
+    ? "Download editing SVG" : "Download cut SVG";
+}
+
+/** Style existing centerlines only: physical dimensions and cut geometry stay intact. */
+function prepareSvgExport(source: string, widthMm: number): string {
+  const doc = new DOMParser().parseFromString(source, "image/svg+xml");
+  if (doc.querySelector("parsererror") || doc.documentElement.localName !== "svg") {
+    throw new Error("The generated SVG could not be read.");
+  }
+  for (const path of doc.querySelectorAll("path")) {
+    // One viewBox unit is one mm. A "mm" or "pt" suffix here would
+    // introduce an additional CSS-unit conversion before viewBox scaling.
+    path.setAttribute("stroke-width", String(widthMm));
+  }
+  return new XMLSerializer().serializeToString(doc.documentElement);
+}
 
 let borderShapeSelect: HTMLSelectElement;
 let cellAlgorithmSelect: HTMLSelectElement;
@@ -747,6 +794,8 @@ function loadFromURL(): boolean {
   // Cell-generation algorithm. Defaults to "cvt" so legacy URLs
   // without `algo=` keep producing identical output.
   cellAlgorithmSelect.value = params.get("algo") ?? "cvt";
+  const strokeProfile = params.get("stroke") ?? "epilog";
+  exportStrokeSelect.value = Object.hasOwn(SVG_EXPORT_PROFILES, strokeProfile) ? strokeProfile : "epilog";
   for (const { input, url, defaultValue } of classicStyleControls()) {
     const raw = params.get(url);
     const value = raw === null ? defaultValue : Number(raw);
@@ -807,6 +856,8 @@ function updateURL(): void {
   params.set("h", String(config.height));
   params.set("unit", config.unit === "Inches" ? "in" : "mm");
   params.set("seed", String(config.seed));
+  const strokeProfile = exportProfileKey();
+  if (strokeProfile !== "epilog") params.set("stroke", strokeProfile);
   const borderVal = borderShapeSelect.value;
   if (borderVal && borderVal !== "rectangle") {
     params.set("border", borderVal);
@@ -1736,6 +1787,7 @@ async function main(): Promise<void> {
   seedInput = document.getElementById("seed") as HTMLInputElement;
   pieceCount = document.getElementById("piece-count")!;
   errorDisplay = document.getElementById("error-display")!;
+  exportStrokeSelect = document.getElementById("export-stroke") as HTMLSelectElement;
 
   borderShapeSelect = document.getElementById("border-shape") as HTMLSelectElement;
   cellAlgorithmSelect = document.getElementById(
@@ -2250,6 +2302,11 @@ async function main(): Promise<void> {
   // ─── Download SVG ──────────────────────────────────────
 
   const downloadBtn = document.getElementById("download")!;
+  syncExportControls();
+  exportStrokeSelect.addEventListener("change", () => {
+    syncExportControls();
+    scheduleURLUpdate();
+  });
   downloadBtn.addEventListener("click", async () => {
     const svgContent = await requestCachedSvg().catch(() => "");
     if (!svgContent || !svgContent.startsWith("<svg")) return;
@@ -2266,8 +2323,17 @@ async function main(): Promise<void> {
     }
     const seed = (config.seed as string) || "seed";
     parts.push(seed);
-    const filename = `${parts.join("-")}.svg`;
-    const blob = new Blob([svgContent], { type: "image/svg+xml" });
+    const profile = SVG_EXPORT_PROFILES[exportProfileKey()];
+    const filename = `${parts.join("-")}${profile.suffix}.svg`;
+    let styledSvg;
+    try {
+      styledSvg = prepareSvgExport(svgContent, profile.widthMm);
+    } catch (err) {
+      errorDisplay.textContent = err instanceof Error ? err.message : "SVG export failed";
+      errorDisplay.style.display = "block";
+      return;
+    }
+    const blob = new Blob([styledSvg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

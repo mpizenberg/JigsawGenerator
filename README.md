@@ -55,6 +55,16 @@ Features include:
 - URL-based configuration sharing via compact query parameters
 - Piece count breakdown (total, edge, corner, interior)
 
+## SVG export and Epilog line weights
+
+The default SVG cut stroke is **0.001 inch = 0.0254 mm = 0.072 pt**, with a black stroke, no fill, and unchanged physical dimensions and centerline geometry. It is exported as `stroke-width="0.0254"`: the document’s viewBox maps one unit to one millimeter. A `mm` or `pt` suffix on the stroke would apply an extra CSS-unit conversion. The previous `stroke-width="0.001mm"` rendered at approximately 0.00378 mm under SVG’s 96-dpi unit rules, substantially thinner than the new cut weight.
+
+Line-weight recognition is a manufacturer/software/driver convention, not a universal laser-cutting standard. The [Fusion M2 32/40 manual, “Setting a Vector Cutting Line”, p. 84](https://www.epiloglaser.com/assets/downloads/manuals/fusion-manual-web.pdf) lists widths up to 0.004 inch as vector cuts across its listed resolutions. [Epilog’s current Illustrator guidance](https://support.epiloglaser.com/laser-machine/legend-36ext/usage-and-operation/system-requirements-setup/sending-vector-jobs-from-adobe-illustrator/) specifies a more conservative maximum of 0.001 inch (0.072 pt). **0.1 pt is about 0.0353 mm**, so it fits the older manual’s table but exceeds that current Illustrator threshold. Verify vector recognition in the driver preview for your actual software and driver.
+
+**SVG export → Stroke width** offers the default Epilog cut profile, a driver-dependent 0.1 pt option, and a **0.25 mm editing copy** with an `-editing.svg` filename. Editing copies need their stroke reset to a cut weight before laser output. Export choices are included in shared links and do not regenerate the puzzle.
+
+For visibility in Inkscape, use **View → Display Mode → Visible Hairlines**. This changes the on-screen display without changing the saved stroke width; see [Inkscape’s documentation](https://wiki.inkscape.org/wiki/Release_notes/1.0#Visible_Hairlines_Display_Mode). Stroke width does not compensate for laser kerf.
+
 ## Planned Features
 
 - **Custom borders** — non-rectangular puzzle outlines (heart, star, and an extensible shape library) via a mask operation on kurbo BezPaths

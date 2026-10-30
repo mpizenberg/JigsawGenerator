@@ -131,8 +131,22 @@
             </div>
           </section>
 
+          <section class="control-section">
+            <h2 class="section-header">SVG export</h2>
+            <div class="input-group">
+              <label for="export-stroke">Stroke width</label>
+              <select id="export-stroke" aria-describedby="export-stroke-note">
+                <option value="epilog">Epilog cut — 0.001 in</option>
+                <option value="point">0.1 pt — check driver</option>
+                <option value="editing">Editing copy — 0.25 mm</option>
+              </select>
+            </div>
+            <p id="export-stroke-note" class="control-hint" aria-live="polite"></p>
+            <p class="control-hint">In Inkscape, use <strong>View → Display Mode → Visible Hairlines</strong> to see cut strokes clearly without changing their width. <a href="https://wiki.inkscape.org/wiki/Release_notes/1.0#Visible_Hairlines_Display_Mode" target="_blank" rel="noopener noreferrer">Inkscape help</a> · <a href="https://support.epiloglaser.com/laser-machine/legend-36ext/usage-and-operation/system-requirements-setup/sending-vector-jobs-from-adobe-illustrator/" target="_blank" rel="noopener noreferrer">Epilog guidance</a></p>
+          </section>
+
           <div class="actions">
-            <button type="button" id="download" class="btn-primary">Download SVG</button>
+            <button type="button" id="download" class="btn-primary">Download cut SVG</button>
             <button type="button" id="copy-link" class="btn-secondary">Copy Link</button>
           </div>
         </aside>
