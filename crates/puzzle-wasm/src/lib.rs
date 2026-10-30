@@ -32,7 +32,7 @@ fn log_phase(phase: &str, ms: f64) {
 #[cfg(not(target_arch = "wasm32"))]
 fn log_phase(_: &str, _: f64) {}
 use puzzle_core::{
-    anchor_seeds_for_corner, arrow_path, bezpath_to_binary, build_cvt_layout, circle_path,
+    anchor_seeds_for_corner, arrow_path, bezpath_to_binary, build_classic_layout, build_cvt_layout, circle_path,
     diamond_path, finalize_cvt_layout, find_sharp_corners, heart_path, hexagon_path,
     layout_border_to_binary, layout_edges_to_binary,
     layout_generate_svg, mask_difference,
@@ -96,6 +96,12 @@ struct BuiltLayout {
 /// Build the `PuzzleLayout` the rest of the pipeline renders from,
 /// starting from a parsed and validated `PuzzleConfig`.
 fn build_layout(config: &PuzzleConfig) -> Result<BuiltLayout, String> {
+    if config.cell_algorithm == puzzle_core::CellAlgorithm::Classic {
+        return Ok(BuiltLayout {
+            layout: build_classic_layout(config)?,
+            anchors: Vec::new(),
+        });
+    }
     let t_total = now_ms();
     let mut boundary =
         resolve_boundary(config.border_shape.as_deref(), config.width, config.height)?;
@@ -138,6 +144,7 @@ fn build_layout(config: &PuzzleConfig) -> Result<BuiltLayout, String> {
     log_phase("anchor_seeds", now_ms() - t);
 
     let lloyd_iters = match config.cell_algorithm {
+        puzzle_core::CellAlgorithm::Classic => unreachable!("classic layouts are built above"),
         puzzle_core::CellAlgorithm::Cvt => DEFAULT_LLOYD_ITERATIONS,
         puzzle_core::CellAlgorithm::Poisson => {
             config.poisson_polish_iterations.min(10) as usize
@@ -458,6 +465,23 @@ pub fn generate_edges_binary(config_json: &str) -> JsValue {
         &JsValue::from_str("piece_count"),
         &JsValue::from_f64(layout.pieces.len() as f64),
     );
+    if config.cell_algorithm == puzzle_core::CellAlgorithm::Classic {
+        let (columns, rows) = puzzle_core::classic_grid_dimensions(
+            config.piece_count,
+            config.width,
+            config.height,
+        );
+        let _ = js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("grid_columns"),
+            &JsValue::from_f64(columns as f64),
+        );
+        let _ = js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("grid_rows"),
+            &JsValue::from_f64(rows as f64),
+        );
+    }
     obj.into()
 }
 
@@ -493,6 +517,28 @@ pub fn get_shape_unit_path(shape: &str) -> js_sys::Float64Array {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_classic_grid_routes_to_four_sided_mesh_and_exports_svg() {
+        for target in [47, 48] {
+            let config_json = format!(r#"{{"piece_count":{target},"width":297.0,"height":210.0,"unit":"Millimeters","seed":"classic","cell_algorithm":"classic"}}"#);
+            let result: serde_json::Value = serde_json::from_str(&generate_grid(&config_json)).unwrap();
+            assert_eq!(result["piece_count"], 48, "{result}");
+            assert_eq!(result["edge_count"], 82);
+            let svg = generate_svg(&config_json);
+            assert!(svg.starts_with("<svg"));
+            assert!(svg.contains('C'));
+            assert_eq!(svg.matches('M').count(), 83, "each shared cut is exported once");
+        }
+    }
+
+    #[test]
+    fn test_legacy_config_still_defaults_to_cvt() {
+        let legacy = r#"{"piece_count":12,"width":200.0,"height":150.0,"unit":"Millimeters","seed":"legacy"}"#;
+        let mut explicit: serde_json::Value = serde_json::from_str(legacy).unwrap();
+        explicit["cell_algorithm"] = "cvt".into();
+        assert_eq!(generate_svg(legacy), generate_svg(&explicit.to_string()));
+    }
 
     #[test]
     fn test_generate_grid_rectangular() {

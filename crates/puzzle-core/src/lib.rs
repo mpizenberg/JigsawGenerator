@@ -1,5 +1,6 @@
 pub mod binary_export;
 pub mod classic_connector;
+pub mod classic_grid;
 pub mod config;
 pub mod connector;
 pub mod convex_clip;
@@ -14,6 +15,7 @@ pub mod svg_export;
 
 pub use binary_export::*;
 pub use classic_connector::*;
+pub use classic_grid::*;
 pub use config::*;
 pub use connector::*;
 pub use cvt::*;

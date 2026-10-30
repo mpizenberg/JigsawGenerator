@@ -1,13 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// Cell-generation algorithm — the pluggable first phase of the
-/// pipeline. Same downstream tessellation, edge extraction, and knob
-/// generation regardless of which algorithm runs here.
-///
-/// Adding more variants in the future: leave the existing ones as
-/// they are, plumb a new branch through `cvt::build_puzzle_layout`'s
-/// match. The pipeline contract is "produce seed positions inside
-/// the boundary"; everything downstream is agnostic.
+/// Piece layout algorithm. CVT and Poisson share the Voronoi pipeline;
+/// Classic uses a separate rectangular mesh with four-sided pieces.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum CellAlgorithm {
     /// Random rejection-scatter + Lloyd relaxation. Produces fully
@@ -21,6 +15,9 @@ pub enum CellAlgorithm {
     /// quality with a fraction of the compute cost.
     #[serde(rename = "poisson")]
     Poisson,
+    /// Traditional four-sided pieces in a rectangular grid.
+    #[serde(rename = "classic")]
+    Classic,
 }
 
 impl Default for CellAlgorithm {
@@ -59,11 +56,9 @@ impl Unit {
 
 /// Top-level puzzle configuration.
 ///
-/// All dimensions are stored in millimeters internally. Pieces come
-/// from a centroidal Voronoi tessellation over the selected
-/// `border_shape` boundary — there is no separate rectangular-grid
-/// path. `border_shape` = `"rectangle"` (or `None`) gives a CVT inside a
-/// rectangle of the configured dimensions.
+/// All dimensions are stored in millimeters internally. Voronoi layouts
+/// support shaped borders and whimsies. Classic layouts use a rectangular
+/// grid, rounding the target count to a complete grid of near-square cells.
 ///
 /// Knob shape is fully determined by constants in
 /// [`crate::classic_connector`]. If an edge would host a knob whose neck
@@ -71,8 +66,7 @@ impl Unit {
 /// as a straight line.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PuzzleConfig {
-    /// Target piece count. CVT places this many seed points inside the
-    /// chosen boundary.
+    /// Target piece count. Classic rounds this to a complete grid.
     #[serde(default = "default_piece_count", alias = "piece_count")]
     pub piece_count: u32,
     /// Puzzle width in mm (after unit conversion).
@@ -122,6 +116,19 @@ pub struct PuzzleConfig {
     /// `cell_algorithm == Cvt`.
     #[serde(default = "default_poisson_polish_iterations")]
     pub poisson_polish_iterations: u32,
+    /// Classic knob size relative to the original shape (0.5–1.25).
+    #[serde(default = "default_classic_knob_size")]
+    pub classic_knob_size: f64,
+    /// Classic corner jitter and side curvature, from regular (0) to organic (1).
+    #[serde(default)]
+    pub classic_grid_irregularity: f64,
+    /// Seeded variation of knob positions along their sides (0–1).
+    #[serde(default)]
+    pub classic_knob_randomness: f64,
+}
+
+fn default_classic_knob_size() -> f64 {
+    1.0
 }
 
 fn default_poisson_polish_iterations() -> u32 {
@@ -180,6 +187,9 @@ impl Default for PuzzleConfig {
             whimsies: Vec::new(),
             cell_algorithm: CellAlgorithm::default(),
             poisson_polish_iterations: default_poisson_polish_iterations(),
+            classic_knob_size: default_classic_knob_size(),
+            classic_grid_irregularity: 0.0,
+            classic_knob_randomness: 0.0,
         }
     }
 }
@@ -193,14 +203,31 @@ impl PuzzleConfig {
                 self.piece_count
             ));
         }
-        if self.width <= 0.0 {
+        if !self.width.is_finite() || self.width <= 0.0 {
             return Err(format!("width must be positive, got {}", self.width));
         }
-        if self.height <= 0.0 {
+        if !self.height.is_finite() || self.height <= 0.0 {
             return Err(format!("height must be positive, got {}", self.height));
         }
         for (i, w) in self.whimsies.iter().enumerate() {
             w.validate().map_err(|e| format!("whimsy[{i}]: {e}"))?;
+        }
+        if self.cell_algorithm == CellAlgorithm::Classic {
+            for (name, value, min, max) in [
+                ("classic_knob_size", self.classic_knob_size, 0.5, 1.25),
+                ("classic_grid_irregularity", self.classic_grid_irregularity, 0.0, 1.0),
+                ("classic_knob_randomness", self.classic_knob_randomness, 0.0, 1.0),
+            ] {
+                if !value.is_finite() || value < min || value > max {
+                    return Err(format!("{name} must be between {min} and {max}, got {value}"));
+                }
+            }
+            if !matches!(self.border_shape.as_deref(), None | Some("") | Some("rectangle")) {
+                return Err("Classic grid requires a rectangular border; use CVT or Poisson for shaped borders".into());
+            }
+            if !self.whimsies.is_empty() {
+                return Err("Classic grid does not support whimsies; use CVT or Poisson for whimsy pieces".into());
+            }
         }
         Ok(())
     }
@@ -246,6 +273,9 @@ impl PuzzleConfig {
             whimsies: Vec::new(),
             cell_algorithm: CellAlgorithm::default(),
             poisson_polish_iterations: default_poisson_polish_iterations(),
+            classic_knob_size: default_classic_knob_size(),
+            classic_grid_irregularity: 0.0,
+            classic_knob_randomness: 0.0,
         };
         config.validate()?;
         Ok(config)

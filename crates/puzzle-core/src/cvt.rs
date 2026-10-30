@@ -298,6 +298,9 @@ pub fn build_cvt_layout(params: &CvtParams) -> Result<PuzzleLayout, String> {
         .map(|p| VPoint { x: p.x, y: p.y })
         .collect();
     let mut seeds: Vec<VPoint> = match params.cell_algorithm {
+        crate::config::CellAlgorithm::Classic => {
+            return Err("Classic grid uses build_classic_layout, not Voronoi seeding".into());
+        }
         crate::config::CellAlgorithm::Cvt => {
             // CVT: rejection-sample uniformly inside the boundary.
             // Lloyd relaxation runs below to drive these toward
