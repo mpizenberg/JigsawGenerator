@@ -7,6 +7,7 @@
     "dev:wasm": "wasm-pack build ../crates/puzzle-wasm --target web --dev",
     "build:wasm": "wasm-pack build ../crates/puzzle-wasm --target web --release",
     "dev": "vite",
+    "typecheck": "tsc --noEmit",
     "build": "npm run build:wasm && vite build",
     "preview": "vite preview"
   },

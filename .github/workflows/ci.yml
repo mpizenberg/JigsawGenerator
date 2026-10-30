@@ -1,0 +1,103 @@
+name: CI and Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR builds can stop; let an active Pages deployment finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: stable
+  WASM_PACK_VERSION: 0.15.1
+
+jobs:
+  build:
+    name: Test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up Rust and WebAssembly target
+        id: rust
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          echo "version=$(rustc --version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Rust dependencies and build tools
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+            ~/.cargo/bin/wasm-pack
+            ~/.cache/.wasm-pack
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-${{ steps.rust.outputs.version }}-wasm-pack-${{ env.WASM_PACK_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-${{ steps.rust.outputs.version }}-wasm-pack-${{ env.WASM_PACK_VERSION }}-
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked --version "$WASM_PACK_VERSION"
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run Rust tests
+        run: cargo test --workspace --locked
+
+      - name: Build production WebAssembly and static app
+        working-directory: web
+        run: npm run build
+
+      # wasm-pack must generate its TypeScript declarations before this check.
+      - name: Check TypeScript
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Upload built site
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: web/dist
+          retention-days: 7
+
+  deploy:
+    name: Deploy GitHub Pages
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Deploy CI-built artifact
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

@@ -31,6 +31,16 @@ npm run build       # builds WASM in release mode + Vite production bundle
 
 After changing Rust code, re-run `npm run dev:wasm` — Vite does not trigger WASM rebuilds automatically.
 
+## CI and GitHub Pages
+
+The [CI and Pages workflow](.github/workflows/ci.yml) runs on pull requests, pushes to `main`, and manual dispatches. It installs Node.js 24 and stable Rust with the WebAssembly target, runs the Rust tests, builds the production WASM and Vite app, and checks TypeScript. npm, Rust dependencies, and build tools are cached. The resulting `web/dist` is uploaded as the `github-pages` artifact, retained for seven days.
+
+After those checks pass on `main`, a deployment job publishes **that same CI-built artifact** to GitHub Pages. Pull requests build and upload an artifact but do not deploy. Deployment uses GitHub’s built-in token and the `github-pages` environment; no personal access token or generated `gh-pages` branch is needed.
+
+Enable **Settings → Pages → Build and deployment → Source: GitHub Actions** in the repository before the first deployment. See [GitHub’s Pages setup documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site). Push to `main` or run **Actions → CI and Pages → Run workflow** to publish. The deployment job reports the live URL (normally `https://<owner>.github.io/JigsawGenerator/`).
+
+The Vite build uses relative asset URLs, so the static app, Web Worker, and WASM binary also load correctly under a repository subdirectory. To check locally after building, run `npm run typecheck` and `npm run preview` from `web/`.
+
 ## Current State
 
 The generator offers three algorithms:
