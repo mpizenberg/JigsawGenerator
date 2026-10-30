@@ -56,6 +56,7 @@ mod tests {
             cross_length: 50.0,
             direction: TabDirection::Out,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let mut rng = create_rng("test");
         let curves = connector.generate(&params, &mut rng);
@@ -70,6 +71,7 @@ mod tests {
             cross_length: 50.0,
             direction: TabDirection::In,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let result = connector.validate(&[], &params);
         assert!(result.is_ok());
@@ -84,6 +86,7 @@ mod tests {
             cross_length: 30.0,
             direction: TabDirection::Out,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let mut rng = create_rng("trait-test");
         let curves = connector.generate(&params, &mut rng);

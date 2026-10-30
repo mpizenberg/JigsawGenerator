@@ -116,18 +116,18 @@ pub struct PuzzleConfig {
     /// `cell_algorithm == Cvt`.
     #[serde(default = "default_poisson_polish_iterations")]
     pub poisson_polish_iterations: u32,
-    /// Classic knob size relative to the original shape (0.5–1.25).
-    #[serde(default = "default_classic_knob_size")]
-    pub classic_knob_size: f64,
+    /// Knob size relative to the original shape, for every algorithm (0.5–1.25).
+    #[serde(default = "default_knob_size", alias = "classic_knob_size")]
+    pub knob_size: f64,
     /// Classic corner jitter and side curvature, from regular (0) to organic (1).
     #[serde(default)]
     pub classic_grid_irregularity: f64,
     /// Seeded variation of knob positions along their sides (0–1).
-    #[serde(default)]
-    pub classic_knob_randomness: f64,
+    #[serde(default, alias = "classic_knob_randomness")]
+    pub knob_randomness: f64,
 }
 
-fn default_classic_knob_size() -> f64 {
+fn default_knob_size() -> f64 {
     1.0
 }
 
@@ -187,9 +187,9 @@ impl Default for PuzzleConfig {
             whimsies: Vec::new(),
             cell_algorithm: CellAlgorithm::default(),
             poisson_polish_iterations: default_poisson_polish_iterations(),
-            classic_knob_size: default_classic_knob_size(),
+            knob_size: default_knob_size(),
             classic_grid_irregularity: 0.0,
-            classic_knob_randomness: 0.0,
+            knob_randomness: 0.0,
         }
     }
 }
@@ -212,15 +212,17 @@ impl PuzzleConfig {
         for (i, w) in self.whimsies.iter().enumerate() {
             w.validate().map_err(|e| format!("whimsy[{i}]: {e}"))?;
         }
+        for (name, value, min, max) in [
+            ("knob_size", self.knob_size, 0.5, 1.25),
+            ("knob_randomness", self.knob_randomness, 0.0, 1.0),
+        ] {
+            if !value.is_finite() || value < min || value > max {
+                return Err(format!("{name} must be between {min} and {max}, got {value}"));
+            }
+        }
         if self.cell_algorithm == CellAlgorithm::Classic {
-            for (name, value, min, max) in [
-                ("classic_knob_size", self.classic_knob_size, 0.5, 1.25),
-                ("classic_grid_irregularity", self.classic_grid_irregularity, 0.0, 1.0),
-                ("classic_knob_randomness", self.classic_knob_randomness, 0.0, 1.0),
-            ] {
-                if !value.is_finite() || value < min || value > max {
-                    return Err(format!("{name} must be between {min} and {max}, got {value}"));
-                }
+            if !self.classic_grid_irregularity.is_finite() || !(0.0..=1.0).contains(&self.classic_grid_irregularity) {
+                return Err("classic_grid_irregularity must be between 0 and 1".into());
             }
             if !matches!(self.border_shape.as_deref(), None | Some("") | Some("rectangle")) {
                 return Err("Classic grid requires a rectangular border; use CVT or Poisson for shaped borders".into());
@@ -273,9 +275,9 @@ impl PuzzleConfig {
             whimsies: Vec::new(),
             cell_algorithm: CellAlgorithm::default(),
             poisson_polish_iterations: default_poisson_polish_iterations(),
-            classic_knob_size: default_classic_knob_size(),
+            knob_size: default_knob_size(),
             classic_grid_irregularity: 0.0,
-            classic_knob_randomness: 0.0,
+            knob_randomness: 0.0,
         };
         config.validate()?;
         Ok(config)

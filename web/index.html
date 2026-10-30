@@ -51,18 +51,10 @@
           <section class="control-section" id="classic-style-controls" hidden>
             <h2 class="section-header">Classic grid style</h2>
             <div class="style-slider">
-              <label for="classic-knob-size">Knob size <output id="classic-knob-size-value" for="classic-knob-size">100%</output></label>
-              <input type="range" id="classic-knob-size" min="50" max="125" step="1" value="100" />
-            </div>
-            <div class="style-slider">
               <label for="classic-grid-irregularity">Grid irregularity <output id="classic-grid-irregularity-value" for="classic-grid-irregularity">0%</output></label>
               <input type="range" id="classic-grid-irregularity" min="0" max="100" step="1" value="0" />
             </div>
-            <div class="style-slider">
-              <label for="classic-knob-randomness">Knob position randomness <output id="classic-knob-randomness-value" for="classic-knob-randomness">0%</output></label>
-              <input type="range" id="classic-knob-randomness" min="0" max="100" step="1" value="0" />
-            </div>
-            <p class="control-hint">Zero irregularity keeps a regular grid; zero randomness centers every knob. The seed controls the variations. Large knobs adapt to fit neighboring cuts.</p>
+            <p class="control-hint">Zero keeps a regular grid; increasing irregularity moves corners and curves sides. The seed controls the variations.</p>
           </section>
 
           <section class="control-section">
@@ -108,6 +100,15 @@
 
           <section class="control-section">
             <h2 class="section-header">Knobs <label class="pill-toggle" title="Toggle connector knobs"><input type="checkbox" id="knobs-enabled" checked /><span class="pill-track"><span class="pill-knob"></span></span></label></h2>
+            <div class="style-slider">
+              <label for="knob-size">Knob size <output id="knob-size-value" for="knob-size">100%</output></label>
+              <input type="range" id="knob-size" min="50" max="125" step="1" value="100" />
+            </div>
+            <div class="style-slider">
+              <label for="knob-randomness">Knob position randomness <output id="knob-randomness-value" for="knob-randomness">0%</output></label>
+              <input type="range" id="knob-randomness" min="0" max="100" step="1" value="0" />
+            </div>
+            <p class="control-hint">Available for all algorithms. Zero randomness starts knobs at the center. Tight spaces may adjust their size or position to keep cuts apart.</p>
             <div class="control-row toggle-row">
               <label class="toggle-row-label" for="edge-knobs-enabled">Knobs on edge pieces</label>
               <label class="pill-toggle" title="Add knobs along the puzzle silhouette so edge pieces look like inner pieces"><input type="checkbox" id="edge-knobs-enabled" /><span class="pill-track"><span class="pill-knob"></span></span></label>

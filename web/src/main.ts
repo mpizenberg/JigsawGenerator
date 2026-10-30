@@ -50,9 +50,10 @@ const SHAPE_DIM_MULTIPLIER: Record<string, number> = {
 const DEFAULT_SHAPE_DIM_MULTIPLIER = 1.9;
 
 function shapeDimMultiplier(): number {
-  if (isClassicGrid()) return 100 / parseFloat(classicKnobSizeInput.value);
+  const knobScale = 100 / parseFloat(knobSizeInput.value);
+  if (isClassicGrid()) return knobScale;
   const key = borderShapeSelect.value || "rectangle";
-  return SHAPE_DIM_MULTIPLIER[key] ?? DEFAULT_SHAPE_DIM_MULTIPLIER;
+  return (SHAPE_DIM_MULTIPLIER[key] ?? DEFAULT_SHAPE_DIM_MULTIPLIER) * knobScale;
 }
 
 // ─── DOM References ─────────────────────────────────────────
@@ -115,20 +116,20 @@ let borderShapeSelect: HTMLSelectElement;
 let cellAlgorithmSelect: HTMLSelectElement;
 let poissonPolishSelect: HTMLSelectElement;
 let poissonPolishGroup: HTMLElement;
-let classicKnobSizeInput: HTMLInputElement;
+let knobSizeInput: HTMLInputElement;
 let classicGridIrregularityInput: HTMLInputElement;
-let classicKnobRandomnessInput: HTMLInputElement;
+let knobRandomnessInput: HTMLInputElement;
 
-function classicStyleControls() {
+function styleControls() {
   return [
-    { input: classicKnobSizeInput, key: "classic_knob_size", url: "ks", defaultValue: 100 },
-    { input: classicGridIrregularityInput, key: "classic_grid_irregularity", url: "gi", defaultValue: 0 },
-    { input: classicKnobRandomnessInput, key: "classic_knob_randomness", url: "kr", defaultValue: 0 },
+    { input: knobSizeInput, key: "knob_size", url: "ks", defaultValue: 100, classicOnly: false },
+    { input: classicGridIrregularityInput, key: "classic_grid_irregularity", url: "gi", defaultValue: 0, classicOnly: true },
+    { input: knobRandomnessInput, key: "knob_randomness", url: "kr", defaultValue: 0, classicOnly: false },
   ];
 }
 
-function syncClassicStyleControls(): void {
-  for (const { input } of classicStyleControls()) {
+function syncStyleControls(): void {
+  for (const { input } of styleControls()) {
     document.getElementById(`${input.id}-value`)!.textContent = `${input.value}%`;
     input.disabled = input !== classicGridIrregularityInput && !knobsEnabledCheckbox.checked;
   }
@@ -356,10 +357,8 @@ function buildConfig(): object {
   if (algoVal && algoVal !== "cvt") {
     config.cell_algorithm = algoVal;
   }
-  if (isClassicGrid()) {
-    for (const { input, key } of classicStyleControls()) {
-      config[key] = parseFloat(input.value) / 100;
-    }
+  for (const { input, key, classicOnly } of styleControls()) {
+    if (!classicOnly || isClassicGrid()) config[key] = parseFloat(input.value) / 100;
   }
   // Poisson polish count: only meaningful when algorithm is poisson.
   // Always include in the config when poisson is selected so the
@@ -796,7 +795,7 @@ function loadFromURL(): boolean {
   cellAlgorithmSelect.value = params.get("algo") ?? "cvt";
   const strokeProfile = params.get("stroke") ?? "epilog";
   exportStrokeSelect.value = Object.hasOwn(SVG_EXPORT_PROFILES, strokeProfile) ? strokeProfile : "epilog";
-  for (const { input, url, defaultValue } of classicStyleControls()) {
+  for (const { input, url, defaultValue } of styleControls()) {
     const raw = params.get(url);
     const value = raw === null ? defaultValue : Number(raw);
     input.value = String(Number.isFinite(value)
@@ -868,9 +867,9 @@ function updateURL(): void {
   if (algoVal && algoVal !== "cvt") {
     params.set("algo", algoVal);
   }
-  if (isClassicGrid()) {
-    for (const { input, url, defaultValue } of classicStyleControls()) {
-      if (Number(input.value) !== defaultValue) params.set(url, input.value);
+  for (const { input, url, defaultValue, classicOnly } of styleControls()) {
+    if ((!classicOnly || isClassicGrid()) && Number(input.value) !== defaultValue) {
+      params.set(url, input.value);
     }
   }
   // Poisson polish count. Only included when (a) algorithm is
@@ -1797,9 +1796,9 @@ async function main(): Promise<void> {
     "poisson-polish",
   ) as HTMLSelectElement;
   poissonPolishGroup = document.getElementById("poisson-polish-group")!;
-  classicKnobSizeInput = document.getElementById("classic-knob-size") as HTMLInputElement;
+  knobSizeInput = document.getElementById("knob-size") as HTMLInputElement;
   classicGridIrregularityInput = document.getElementById("classic-grid-irregularity") as HTMLInputElement;
-  classicKnobRandomnessInput = document.getElementById("classic-knob-randomness") as HTMLInputElement;
+  knobRandomnessInput = document.getElementById("knob-randomness") as HTMLInputElement;
 
   pieceTargetInput = document.getElementById("piece-target") as HTMLInputElement;
   pieceSizeWarning = document.getElementById("piece-size-warning")!;
@@ -1860,7 +1859,7 @@ async function main(): Promise<void> {
     knobsEnabledCheckbox
       .closest(".pill-toggle")
       ?.classList.toggle("active", knobsEnabledCheckbox.checked);
-    syncClassicStyleControls();
+    syncStyleControls();
     scheduleGenerate();
   });
 
@@ -1934,14 +1933,14 @@ async function main(): Promise<void> {
     scheduleGenerate();
   });
 
-  for (const { input } of classicStyleControls()) {
+  for (const { input } of styleControls()) {
     input.addEventListener("input", () => {
-      syncClassicStyleControls();
+      syncStyleControls();
       enforceConstraints();
       scheduleGenerate();
     });
   }
-  syncClassicStyleControls();
+  syncStyleControls();
 
   // Set initial visibility based on whatever URL/persisted state
   // chose at load time.

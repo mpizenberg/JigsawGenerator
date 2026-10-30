@@ -88,7 +88,7 @@ impl ConnectorGenerator for ClassicKnobConnector {
         // Knob dimensions scale with the edge: knob width is a fixed
         // fraction of min(length, cross_length). Using the smaller
         // dimension keeps the knob from overshooting a narrow neighbor.
-        let base = length.min(params.cross_length);
+        let base = length.min(params.cross_length) * params.knob_scale;
         let knob_w = base * KNOB_WIDTH_RATIO;
         let knob_h = knob_w * KNOB_HEIGHT_RATIO * dir_sign;
         let neck_w = knob_w * NECK_RATIO;
@@ -206,6 +206,7 @@ mod tests {
             cross_length: 50.0,
             direction,
             offset: 0.0,
+            knob_scale: 1.0,
         }
     }
 
@@ -378,12 +379,14 @@ mod tests {
             cross_length: 30.0,
             direction: TabDirection::Out,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let long = EdgeParams {
             length: 60.0,
             cross_length: 60.0,
             direction: TabDirection::Out,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let mut rng = create_rng("scale-test");
         let s = connector.generate(&short, &mut rng);
@@ -429,6 +432,7 @@ mod tests {
             cross_length: 40.0,
             direction: TabDirection::Out,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let h_curves = connector.generate(&h_params, &mut rng);
 
@@ -438,6 +442,7 @@ mod tests {
             cross_length: 100.0,
             direction: TabDirection::Out,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let mut rng2 = create_rng("uniform-test");
         let v_curves = connector.generate(&v_params, &mut rng2);
@@ -470,6 +475,7 @@ mod tests {
             cross_length: 20.0,
             direction: TabDirection::Out,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let mut rng = create_rng("extreme-test");
         let curves = connector.generate(&params, &mut rng);
@@ -496,6 +502,7 @@ mod tests {
             cross_length: 50.0,
             direction: TabDirection::Out,
             offset: 0.0,
+            knob_scale: 1.0,
         };
         let mut rng = create_rng("neck-test");
         let curves = connector.generate(&params, &mut rng);

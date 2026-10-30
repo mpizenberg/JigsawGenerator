@@ -18,12 +18,13 @@ use std::collections::HashMap;
 
 use kurbo::{
     BezPath, CubicBez, ParamCurve, ParamCurveArclen, ParamCurveNearest, PathEl, PathSeg, Point,
-    Vec2,
+    Shape, Vec2,
 };
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
 use crate::binary_export::{CMD_CLOSE, CMD_CURVE_TO, CMD_LINE_TO, CMD_MOVE_TO};
+use crate::connector::ConnectorGenerator;
 use crate::edge::{EdgeParams, TabDirection};
 use crate::svg_export::{build_svg_document, edge_transform};
 
@@ -116,6 +117,19 @@ impl PuzzleLayout {
         seed: &str,
         min_knob_edge_length: f64,
     ) {
+        self.generate_connectors_with_style(connector, seed, min_knob_edge_length, 1.0, 0.0);
+    }
+
+    /// Generate the same shared cuts with seeded placement variation and
+    /// a size multiplier retained through collision resolution.
+    pub fn generate_connectors_with_style(
+        &mut self,
+        connector: &dyn crate::connector::ConnectorGenerator,
+        seed: &str,
+        min_knob_edge_length: f64,
+        knob_scale: f64,
+        randomness: f64,
+    ) {
         let cross_lengths: Vec<f64> = self
             .edges
             .iter()
@@ -135,6 +149,7 @@ impl PuzzleLayout {
             crate::flat_boundary::BoundaryIndex::new(&boundary_polygon);
 
         let mut rng = crate::seed::create_rng(&format!("{}-connectors", seed));
+        let mut position_rng = crate::seed::create_rng(&format!("{}-knob-positions", seed));
         for (edge, cross_length) in self.edges.iter_mut().zip(cross_lengths) {
             let length = edge.length();
             if length < min_knob_edge_length {
@@ -148,10 +163,15 @@ impl PuzzleLayout {
             // push the knob past the boundary (outer contour *or* a
             // whimsy hole), force direction to the other side. If both
             // sides would overlap, skip the knob entirely.
-            let (out_safe, in_safe) = knob_safety_probe(
+            let base = length.min(cross_length) * knob_scale;
+            let room = (length * 0.5 - base * 0.25 * 1.2).max(0.0);
+            let offset = position_rng.random_range(-1.0..1.0) * randomness * room.min(length * 0.18);
+            let (out_safe, in_safe) = knob_safety_probe_with_style(
                 edge.start,
                 edge.end,
                 cross_length,
+                knob_scale,
+                offset,
                 &boundary_polygon,
                 &boundary_index,
             );
@@ -170,7 +190,8 @@ impl PuzzleLayout {
                 length,
                 cross_length,
                 direction: edge.direction,
-                offset: 0.0,
+                offset,
+                knob_scale,
             };
             let curves = connector.generate(&params, &mut rng);
             edge.connector = Some(curves);
@@ -328,10 +349,12 @@ impl PuzzleLayout {
             if !collides_at(i, &obbs) {
                 continue;
             }
-            let (out_safe, in_safe) = knob_safety_probe(
+            let (out_safe, in_safe) = knob_safety_probe_with_style(
                 self.edges[i].start,
                 self.edges[i].end,
                 orig.cross_length,
+                orig.knob_scale,
+                orig.offset,
                 &boundary_polygon,
                 &boundary_index,
             );
@@ -355,6 +378,7 @@ impl PuzzleLayout {
                 cross_length: orig.cross_length,
                 direction: flipped,
                 offset: orig.offset,
+                knob_scale: orig.knob_scale,
             };
             let flipped_obb = obb_from_chord(
                 self.edges[i].start,
@@ -404,8 +428,10 @@ impl PuzzleLayout {
                     continue;
                 };
                 let curr = self.edges[i].connector_params.clone().unwrap_or(orig.clone());
-                let knob_w = curr.length.min(curr.cross_length) * 0.25;
-                let max_offset = (curr.length * 0.5 - knob_w).max(0.0);
+                let knob_w = curr.length.min(curr.cross_length) * curr.knob_scale * 0.25;
+                let styled = orig.knob_scale != 1.0 || orig.offset != 0.0;
+                let approach = if styled { 1.2 } else { 1.0 };
+                let max_offset = (curr.length * 0.5 - knob_w * approach).max(0.0);
                 if max_offset < 1e-9 {
                     continue;
                 }
@@ -426,7 +452,18 @@ impl PuzzleLayout {
                         cross_length: orig.cross_length * scale,
                         direction: curr.direction,
                         offset,
+                        knob_scale: orig.knob_scale,
                     };
+                    if styled {
+                        let (out_safe, in_safe) = knob_safety_probe_with_style(
+                            self.edges[i].start, self.edges[i].end,
+                            trial_params.cross_length, trial_params.knob_scale, offset,
+                            &boundary_polygon, &boundary_index,
+                        );
+                        if !match curr.direction { TabDirection::Out => out_safe, TabDirection::In => in_safe } {
+                            continue;
+                        }
+                    }
                     let trial_obb = obb_from_chord(
                         self.edges[i].start,
                         self.edges[i].end,
@@ -556,10 +593,12 @@ impl PuzzleLayout {
                         .clone()
                         .unwrap_or(orig.clone());
                     let scaled_cross = orig.cross_length * k;
-                    let (out_safe, in_safe) = knob_safety_probe(
+                    let (out_safe, in_safe) = knob_safety_probe_with_style(
                         self.edges[i].start,
                         self.edges[i].end,
                         scaled_cross,
+                        orig.knob_scale,
+                        if orig.knob_scale == 1.0 && orig.offset == 0.0 { 0.0 } else { curr.offset },
                         &boundary_polygon,
                         &boundary_index,
                     );
@@ -581,6 +620,7 @@ impl PuzzleLayout {
                             cross_length: scaled_cross,
                             direction: dir,
                             offset: curr.offset,
+                            knob_scale: orig.knob_scale,
                         };
                         let trial_obb = obb_from_chord(
                             self.edges[i].start,
@@ -633,6 +673,35 @@ impl PuzzleLayout {
                 if interior_clear && fixed_clear {
                     break;
                 }
+            }
+        }
+    }
+
+    /// Recheck customized profiles against the actual outline and whimsy
+    /// holes after collision resolution has moved or flipped them. Shrink
+    /// a profile locally if necessary; never alter the underlying mesh.
+    pub fn fit_styled_connectors_to_boundary(&mut self) {
+        let boundary = &self.outer_boundary;
+        let mut rng = crate::seed::create_rng("knob-boundary-fit");
+        for edge in &mut self.edges {
+            let Some(mut params) = edge.connector_params.clone() else { continue; };
+            let transform = edge_transform(edge.start, edge.end);
+            let mut fits = false;
+            for _ in 0..32 {
+                let curves = edge.connector.as_ref().unwrap();
+                fits = curves.iter().all(|curve| (1..16).all(|i| {
+                    let point = transform * curve.eval(i as f64 / 16.0);
+                    boundary.winding(point) != 0
+                }));
+                if fits { break; }
+                params.knob_scale *= 0.9;
+                edge.connector = Some(crate::ClassicKnobConnector.generate(&params, &mut rng));
+            }
+            if fits {
+                edge.connector_params = Some(params);
+            } else {
+                edge.connector = None;
+                edge.connector_params = None;
             }
         }
     }
@@ -765,6 +834,16 @@ impl PuzzleLayout {
         &mut self,
         connector: &dyn crate::connector::ConnectorGenerator,
         seed: &str,
+    ) {
+        self.knob_outer_boundary_with_style(connector, seed, 1.0, 0.0);
+    }
+
+    pub fn knob_outer_boundary_with_style(
+        &mut self,
+        connector: &dyn crate::connector::ConnectorGenerator,
+        seed: &str,
+        knob_scale: f64,
+        randomness: f64,
     ) {
         let clearance_mm = crate::cvt::knob_clearance_for_base(self.knob_base_cap);
         // Tangent-direction change at a path-segment junction beyond
@@ -954,7 +1033,7 @@ impl PuzzleLayout {
                 TabDirection::Out
             };
             let cross = if self.knob_base_cap > 0.0 {
-                chord_len.min(self.knob_base_cap)
+                chord_len.min(self.knob_base_cap / knob_scale)
             } else {
                 chord_len
             };
@@ -962,7 +1041,11 @@ impl PuzzleLayout {
                 length: chord_len,
                 cross_length: cross,
                 direction,
-                offset: 0.0,
+                offset: if randomness == 0.0 { 0.0 } else {
+                    let room = (chord_len * 0.5 - chord_len.min(cross) * knob_scale * 0.3).max(0.0);
+                    rng.random_range(-1.0..1.0) * randomness * room.min(chord_len * 0.18)
+                },
+                knob_scale,
             };
             let curves = connector.generate(&params, &mut rng);
             let aff = crate::svg_export::edge_transform(p_a, p_b);
@@ -1026,7 +1109,7 @@ impl PuzzleLayout {
             let Some(params) = edge.connector_params.as_ref() else {
                 continue;
             };
-            total += params.length.min(params.cross_length);
+            total += params.length.min(params.cross_length) * params.knob_scale;
             count += 1;
         }
         if count == 0 {
@@ -1044,8 +1127,9 @@ impl PuzzleLayout {
             let Some(params) = edge.connector_params.as_mut() else {
                 continue;
             };
-            if params.cross_length > avg {
-                params.cross_length = avg;
+            let cap = avg / params.knob_scale;
+            if params.cross_length > cap {
+                params.cross_length = cap;
                 let curves = connector.generate(params, &mut rng);
                 edge.connector = Some(curves);
             }
@@ -1761,6 +1845,7 @@ fn apply_knob_variant(
         cross_length: original.cross_length * scale,
         direction,
         offset,
+        knob_scale: original.knob_scale,
     };
     let mut rng = crate::seed::create_rng("knob-resolve");
     let curves = connector.generate(&variant, &mut rng);
@@ -1781,10 +1866,10 @@ pub struct KnobObb {
 /// Build a knob's OBB. The knob occupies edge-local
 /// `x ∈ [center_x - knob_w, center_x + knob_w]` and
 /// `y ∈ [0, knob_h]` (Out) or `[-knob_h, 0]` (In), where:
-/// - `center_x = length/2` (knob centered on edge midpoint)
+/// - `center_x = length/2 + offset`
 /// - `knob_w   = base × KNOB_WIDTH_RATIO`
 /// - `knob_h   = base × KNOB_WIDTH_RATIO × KNOB_HEIGHT_RATIO`
-/// - `base     = min(length, cross_length)`
+/// - `base     = min(length, cross_length) × knob_scale`
 ///
 /// We add a small fudge to the perpendicular extent for the bezier
 /// top overshoot (peak slightly above `knob_h`) plus `clearance_mm` on
@@ -1807,7 +1892,7 @@ fn obb_from_chord(start: Point, end: Point, params: &EdgeParams, clearance_mm: f
     const KNOB_H_FACTOR: f64 = 0.30; // KNOB_W_FACTOR × KNOB_HEIGHT_RATIO (=1.2)
     const TOP_OVERSHOOT: f64 = 1.05;
 
-    let base = params.length.min(params.cross_length);
+    let base = params.length.min(params.cross_length) * params.knob_scale;
     let knob_w = base * KNOB_W_FACTOR + clearance_mm;
     let knob_h = base * KNOB_H_FACTOR * TOP_OVERSHOOT + clearance_mm;
     let center_x = params.length * 0.5 + params.offset;
@@ -1950,10 +2035,12 @@ fn obbs_overlap(a: &KnobObb, b: &KnobObb) -> bool {
 /// boundary plus its Y-bucket spatial index. Both are reused across
 /// the O(edges) calls in `generate_connectors` /
 /// `resolve_knob_collisions` so we don't rebuild the index per probe.
-fn knob_safety_probe(
+fn knob_safety_probe_with_style(
     a: Point,
     b: Point,
     cross_length: f64,
+    scale: f64,
+    offset: f64,
     boundary_polygon: &[Vec<Point>],
     boundary_index: &crate::flat_boundary::BoundaryIndex,
 ) -> (bool, bool) {
@@ -1967,7 +2054,7 @@ fn knob_safety_probe(
     if length < 1e-9 {
         return (true, true);
     }
-    let base = length.min(cross_length);
+    let base = length.min(cross_length) * scale;
     let knob_w = base * KNOB_W_FACTOR;
     let knob_h = base * KNOB_H_FACTOR;
 
@@ -1976,8 +2063,8 @@ fn knob_safety_probe(
     // Edge-local +y in global coords is (-dy, dx) — the "Out" side.
     let px = -dy;
     let py = dx;
-    let mx = (a.x + b.x) * 0.5;
-    let my = (a.y + b.y) * 0.5;
+    let mx = (a.x + b.x) * 0.5 + dx * offset;
+    let my = (a.y + b.y) * 0.5 + dy * offset;
 
     let samples: [(f64, f64); 3] = [
         (0.0, knob_h * PROBE_OVERSHOOT),
@@ -2166,6 +2253,34 @@ mod tests {
     }
 
     #[test]
+    fn shared_knob_controls_scale_and_offset_without_changing_the_mesh() {
+        let mut heights = Vec::new();
+        for size in [0.5, 1.0, 1.25] {
+            let mut layout = two_piece_layout();
+            layout.generate_connectors_with_style(&crate::ClassicKnobConnector, "shared-style", 0.0, size, 0.0);
+            layout.compute_and_cap_avg_knob_base(&crate::ClassicKnobConnector);
+            layout.resolve_knob_collisions(&crate::ClassicKnobConnector, 0.0, &[]);
+            let edge = &layout.edges[0];
+            assert_eq!(edge.start, Point::new(100.0, 0.0));
+            assert_eq!(edge.end, Point::new(100.0, 100.0));
+            let params = edge.connector_params.as_ref().unwrap();
+            assert_eq!(params.knob_scale, size);
+            assert_eq!(params.offset, 0.0);
+            heights.push(edge.connector.as_ref().unwrap()[2].p3.y.abs());
+        }
+        assert!((heights[0] / heights[1] - 0.5).abs() < 1e-9);
+        assert!((heights[2] / heights[1] - 1.25).abs() < 1e-9);
+
+        let mut layout = two_piece_layout();
+        layout.generate_connectors_with_style(&crate::ClassicKnobConnector, "shared-style", 0.0, 1.0, 1.0);
+        assert!(layout.edges[0].connector_params.as_ref().unwrap().offset.abs() > 0.01);
+        let svg = layout_generate_svg(&layout);
+        let mut repeated = two_piece_layout();
+        repeated.generate_connectors_with_style(&crate::ClassicKnobConnector, "shared-style", 0.0, 1.0, 1.0);
+        assert_eq!(svg, layout_generate_svg(&repeated));
+    }
+
+    #[test]
     fn test_border_binary_starts_with_moveto_ends_with_close() {
         let layout = two_piece_layout();
         let data = layout_border_to_binary(&layout);
@@ -2232,6 +2347,7 @@ mod tests {
                 cross_length: 10.0,
                 direction: crate::edge::TabDirection::Out,
                 offset: 0.0,
+                knob_scale: 1.0,
             }),
             pieces,
         };
@@ -2287,6 +2403,7 @@ mod tests {
                 cross_length: 10.0,
                 direction: crate::edge::TabDirection::Out,
                 offset: 0.0,
+                knob_scale: 1.0,
             }),
             pieces,
         };

@@ -152,8 +152,8 @@ pub fn build_classic_layout(config: &PuzzleConfig) -> Result<PuzzleLayout, Strin
         }
     }
 
-    let original_style = config.classic_knob_size == 1.0
-        && config.classic_knob_randomness == 0.0
+    let original_style = config.knob_size == 1.0
+        && config.knob_randomness == 0.0
         && config.classic_grid_irregularity == 0.0;
     if original_style && !config.disable_knobs {
         layout.generate_connectors(&ClassicKnobConnector, &config.seed, 0.0);
@@ -172,7 +172,7 @@ pub fn build_classic_layout(config: &PuzzleConfig) -> Result<PuzzleLayout, Strin
             let offset = position_rng.random_range(-1.0..1.0)
                 * edge.length()
                 * 0.18
-                * config.classic_knob_randomness;
+                * config.knob_randomness;
             let bend = curve_rng.random_range(-1.0..1.0)
                 * cell_width.min(cell_height)
                 * 0.06
@@ -233,7 +233,7 @@ pub fn build_classic_layout(config: &PuzzleConfig) -> Result<PuzzleLayout, Strin
             let offset = rng.random_range(-1.0..1.0)
                 * start.distance(end)
                 * 0.18
-                * config.classic_knob_randomness;
+                * config.knob_randomness;
             let (curves, _) = styled_cut(
                 start,
                 end,
@@ -282,12 +282,13 @@ fn styled_cut(
     let mut rng = create_rng("classic-shape"); // Shape generator itself uses no randomness.
     for attempt in 0..64 {
         let fit = 0.9_f64.powi(attempt);
-        let size = config.classic_knob_size * fit;
+        let size = config.knob_size * fit;
         let params = EdgeParams {
             length,
             cross_length,
             direction,
             offset,
+            knob_scale: 1.0,
         };
         let mut curves = if config.disable_knobs {
             vec![CubicBez::new(
@@ -302,6 +303,7 @@ fn styled_cut(
                 cross_length: cross_length * size,
                 direction,
                 offset: 0.0,
+                knob_scale: 1.0,
             };
             let mut curves = ClassicKnobConnector.generate(&scaled, &mut rng);
             let shift = (length - scaled.length) * 0.5 + offset;
@@ -381,16 +383,16 @@ mod tests {
     fn style_controls_change_size_and_placement_independently() {
         let mut config = config();
         let original = build_classic_layout(&config).unwrap();
-        config.classic_knob_size = 0.5;
+        config.knob_size = 0.5;
         let small = build_classic_layout(&config).unwrap();
-        config.classic_knob_size = 1.25;
+        config.knob_size = 1.25;
         let large = build_classic_layout(&config).unwrap();
         let height =
             |layout: &PuzzleLayout| layout.edges[0].connector.as_ref().unwrap()[2].p3.y.abs();
         assert!((height(&small) / height(&original) - 0.5).abs() < 1e-8);
         assert!(height(&large) > height(&original));
-        config.classic_knob_size = 1.0;
-        config.classic_knob_randomness = 1.0;
+        config.knob_size = 1.0;
+        config.knob_randomness = 1.0;
         let shifted = build_classic_layout(&config).unwrap();
         assert!(
             shifted
@@ -465,8 +467,8 @@ mod tests {
                 config.piece_count = count;
                 config.seed = format!("style-stress-{seed}");
                 config.classic_grid_irregularity = 1.0;
-                config.classic_knob_randomness = 1.0;
-                config.classic_knob_size = 1.25;
+                config.knob_randomness = 1.0;
+                config.knob_size = 1.25;
                 let layout = build_classic_layout(&config).unwrap();
                 let cuts: Vec<Vec<Point>> = layout
                     .edges
@@ -530,14 +532,14 @@ mod tests {
     fn invalid_classic_style_values_are_rejected() {
         let mut config = config();
         for value in [f64::NAN, f64::INFINITY, -1.0, 1.26] {
-            config.classic_knob_size = value;
+            config.knob_size = value;
             assert!(build_classic_layout(&config).is_err());
         }
-        config.classic_knob_size = 1.0;
+        config.knob_size = 1.0;
         config.classic_grid_irregularity = 1.01;
         assert!(build_classic_layout(&config).is_err());
         config.classic_grid_irregularity = 0.0;
-        config.classic_knob_randomness = -0.01;
+        config.knob_randomness = -0.01;
         assert!(build_classic_layout(&config).is_err());
     }
 

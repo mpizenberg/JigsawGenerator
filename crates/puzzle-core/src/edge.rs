@@ -47,10 +47,9 @@ impl Edge {
 /// Parameters passed to a [`ConnectorGenerator`](super::ConnectorGenerator)
 /// for generating connector shapes on internal edges.
 ///
-/// Knob size and neck taper are both derived from constants in the
-/// connector implementation (see `classic_connector.rs`:
-/// `KNOB_WIDTH_RATIO`, `NECK_RATIO`). Only the geometric inputs
-/// (length, cross length, direction) are user-visible.
+/// The base profile and neck taper come from `classic_connector.rs`.
+/// `knob_scale` adjusts its size, while `offset` moves it along the cut.
+/// Keeping both here lets collision handling preserve the chosen style.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EdgeParams {
     /// Edge length in mm.
@@ -69,6 +68,14 @@ pub struct EdgeParams {
     /// centered on the edge).
     #[serde(default)]
     pub offset: f64,
+    /// Uniform knob width/height multiplier. Kept in the parameters so
+    /// collision resolution and regenerated variants use the same profile.
+    #[serde(default = "default_knob_scale")]
+    pub knob_scale: f64,
+}
+
+fn default_knob_scale() -> f64 {
+    1.0
 }
 
 #[cfg(test)]

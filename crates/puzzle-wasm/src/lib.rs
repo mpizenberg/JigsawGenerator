@@ -173,6 +173,12 @@ fn build_layout(config: &PuzzleConfig) -> Result<BuiltLayout, String> {
     let mut layout = build_cvt_layout(&params)?;
     log_phase("build_cvt_layout", now_ms() - t);
 
+    let styled_knobs = config.knob_size != 1.0 || config.knob_randomness != 0.0;
+    if styled_knobs {
+        layout.generate_connectors_with_style(&ClassicKnobConnector, &config.seed, 0.0,
+            config.knob_size, config.knob_randomness);
+    }
+
     let t = now_ms();
     finalize_cvt_layout(&mut layout);
     log_phase("finalize_cvt_layout", now_ms() - t);
@@ -187,10 +193,14 @@ fn build_layout(config: &PuzzleConfig) -> Result<BuiltLayout, String> {
     // outer boundary becomes a chord with a classic knob in its
     // middle. Runs after CVT so it sees the actual Voronoi-vs-boundary
     // clip points.
-    if config.knob_outer_boundary {
+    if config.knob_outer_boundary && !config.disable_knobs {
         let t = now_ms();
-        layout.knob_outer_boundary(&ClassicKnobConnector, &config.seed);
+        layout.knob_outer_boundary_with_style(&ClassicKnobConnector, &config.seed,
+            config.knob_size, config.knob_randomness);
         log_phase("knob_outer_boundary", now_ms() - t);
+    }
+    if styled_knobs {
+        layout.fit_styled_connectors_to_boundary();
     }
     // Debug toggle: clear every connector so each edge renders as a
     // plain straight cut. Lets the user inspect the raw CVT geometry
@@ -211,7 +221,7 @@ fn build_layout(config: &PuzzleConfig) -> Result<BuiltLayout, String> {
         // voronoice requires ≥ 3 seeds to build a Delaunay triangulation;
         // anything lower collapses to a single solid whimsy piece.
         if w.subdivisions >= 3 {
-            append_nested_cvt(&mut layout, w, &path, i, &config.seed)?;
+            append_nested_cvt(&mut layout, w, &path, i, config)?;
         } else {
             let id = layout.pieces.len();
             layout.pieces.push(LayoutPiece {
@@ -236,10 +246,10 @@ fn append_nested_cvt(
     w: &WhimsyPlacement,
     path: &BezPath,
     index: usize,
-    parent_seed: &str,
+    config: &PuzzleConfig,
 ) -> Result<(), String> {
     let bbox = path.bounding_box();
-    let sub_seed = format!("{}-whimsy-{}", parent_seed, index);
+    let sub_seed = format!("{}-whimsy-{}", config.seed, index);
     let sub_params = CvtParams {
         width: bbox.width(),
         height: bbox.height(),
@@ -265,8 +275,22 @@ fn append_nested_cvt(
     };
     let mut sub = build_cvt_layout(&sub_params)
         .map_err(|e| format!("whimsy[{index}] nested CVT: {e}"))?;
+    let styled_knobs = config.knob_size != 1.0 || config.knob_randomness != 0.0;
+    if styled_knobs {
+        sub.generate_connectors_with_style(&ClassicKnobConnector, &sub_seed, 0.0,
+            config.knob_size, config.knob_randomness);
+    }
     finalize_cvt_layout(&mut sub);
     sub.remove_small_knobs(SMALL_KNOB_RATIO, MIN_KNOBS_PER_PIECE);
+    if styled_knobs {
+        sub.fit_styled_connectors_to_boundary();
+    }
+    if config.disable_knobs {
+        for edge in &mut sub.edges {
+            edge.connector = None;
+            edge.connector_params = None;
+        }
+    }
 
     let piece_offset = layout.pieces.len();
     let edge_offset = layout.edges.len();
@@ -517,6 +541,81 @@ pub fn get_shape_unit_path(shape: &str) -> js_sys::Float64Array {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_knob_controls_work_for_both_voronoi_algorithms() {
+        for algorithm in [puzzle_core::CellAlgorithm::Cvt, puzzle_core::CellAlgorithm::Poisson] {
+            let mut config = PuzzleConfig {
+                width: 400.0, height: 300.0, piece_count: 24,
+                seed: "shared-knobs".into(), cell_algorithm: algorithm,
+                ..PuzzleConfig::default()
+            };
+            let original = build_layout(&config).unwrap().layout;
+            config.knob_size = 0.5;
+            config.knob_randomness = 1.0;
+            let styled = build_layout(&config).unwrap().layout;
+            assert_eq!(styled.pieces.len(), original.pieces.len());
+            assert_eq!(styled.edges.len(), original.edges.len());
+            for (a, b) in original.edges.iter().zip(&styled.edges) {
+                assert_eq!(a.start, b.start);
+                assert_eq!(a.end, b.end);
+                assert_eq!(a.pieces, b.pieces);
+            }
+            assert!(styled.edges.iter().any(|e| e.connector_params.as_ref().is_some_and(|p| p.offset.abs() > 0.01)));
+            assert_ne!(layout_generate_svg(&original), layout_generate_svg(&styled));
+            assert_eq!(layout_generate_svg(&styled), layout_generate_svg(&build_layout(&config).unwrap().layout));
+            config.knob_size = 1.25;
+            assert_ne!(layout_generate_svg(&styled), layout_generate_svg(&build_layout(&config).unwrap().layout));
+        }
+    }
+
+    #[test]
+    fn classic_config_aliases_preserve_existing_shared_designs() {
+        let legacy = r#"{"piece_count":24,"width":400.0,"height":300.0,"unit":"Millimeters","seed":"alias","cell_algorithm":"classic","classic_knob_size":0.8,"classic_knob_randomness":0.7}"#;
+        let current = legacy.replace("classic_knob_size", "knob_size").replace("classic_knob_randomness", "knob_randomness");
+        assert_eq!(generate_svg(legacy), generate_svg(&current));
+    }
+
+    #[test]
+    fn styled_knobs_respect_shaped_borders_and_subdivided_whimsies() {
+        use kurbo::ParamCurve;
+        for algorithm in [puzzle_core::CellAlgorithm::Cvt, puzzle_core::CellAlgorithm::Poisson] {
+            for border in ["heart", "rectangle"] {
+                let mut config = PuzzleConfig {
+                    width: 500.0, height: 400.0, piece_count: 24,
+                    seed: "styled-boundary".into(), cell_algorithm: algorithm,
+                    border_shape: Some(border.into()), knob_size: 1.25, knob_randomness: 1.0,
+                    ..PuzzleConfig::default()
+                };
+                let layout = build_layout(&config).unwrap().layout;
+                assert!(layout.edges.iter().any(|e| e.connector.is_some()));
+                for edge in &layout.edges {
+                    let transform = puzzle_core::edge_transform(edge.start, edge.end);
+                    if let Some(curves) = &edge.connector {
+                        for curve in curves {
+                            for i in 1..16 {
+                                let point = transform * curve.eval(i as f64 / 16.0);
+                                assert_ne!(layout.outer_boundary.winding(point), 0, "styled knob crosses {border} border");
+                            }
+                        }
+                    }
+                }
+                config.border_shape = None;
+                config.knob_size = 0.5;
+                config.whimsies.push(WhimsyPlacement {
+                    shape: "circle".into(), center_x: 250.0, center_y: 200.0,
+                    width: 150.0, height: 150.0, rotation: 0.0, subdivisions: 4,
+                });
+                let layout = build_layout(&config).unwrap().layout;
+                let nested_start = layout.pieces.len() - 4;
+                assert!(layout.edges.iter().any(|e| e.pieces.0 >= nested_start && e.connector_params.as_ref().is_some_and(|p| p.knob_scale <= 0.5)));
+                config.disable_knobs = true;
+                config.knob_outer_boundary = true;
+                let flat = build_layout(&config).unwrap().layout;
+                assert!(flat.edges.iter().all(|e| e.connector.is_none()));
+            }
+        }
+    }
 
     #[test]
     fn test_classic_grid_routes_to_four_sided_mesh_and_exports_svg() {

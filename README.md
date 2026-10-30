@@ -51,7 +51,9 @@ The generator offers three algorithms:
 
 Choose an algorithm in **Pieces → Algorithm**. Existing shared links keep their original algorithm; classic links include `algo=classic`.
 
-For Classic grid, **Classic grid style** provides live sliders for **Knob size** (50–125%), **Grid irregularity** (0–100%, moving corners and gently curving sides), and **Knob position randomness** (0–100%, centered to varied positions). Variations are deterministic for a given seed and saved in shared links. Zero irregularity and randomness reproduce the original regular grid. Knobs adapt locally where needed to keep neighboring cuts apart; the pieces retain four sides. Grid curvature remains visible when knobs are disabled.
+The **Knobs** section provides live sliders for **Knob size** (50–125%) and **Knob position randomness** (0–100%) in **all three algorithms**. Size and placement propagate through collision handling, shaped borders, and nested whimsy sub-puzzles. Tight spaces can still adjust individual knobs. Variations are deterministic for a given seed and saved in shared links; existing classic links continue to work.
+
+**Classic grid style → Grid irregularity** (0–100%) moves corners and gently curves sides while retaining four-sided pieces. This control is specific to Classic; CVT and Poisson already generate irregular cells. Zero irregularity and randomness reproduce the original regular grid. Grid curvature remains visible when knobs are disabled.
 
 Features include:
 
