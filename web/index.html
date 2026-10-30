@@ -24,6 +24,7 @@
                 <select id="cell-algorithm">
                   <option value="cvt">CVT</option>
                   <option value="poisson">Poisson</option>
+                  <option value="classic">Classic grid</option>
                 </select>
               </div>
               <div class="input-group" id="poisson-polish-group" hidden>
@@ -43,7 +44,25 @@
                 </select>
               </div>
             </div>
+            <p id="classic-grid-note" class="control-hint" hidden>Four-sided pieces in a rectangular grid. The target count is rounded to a complete grid of roughly square pieces. Choose CVT or Poisson for shaped borders and whimsies.</p>
             <ul id="piece-size-warning" class="piece-size-warning"></ul>
+          </section>
+
+          <section class="control-section" id="classic-style-controls" hidden>
+            <h2 class="section-header">Classic grid style</h2>
+            <div class="style-slider">
+              <label for="classic-knob-size">Knob size <output id="classic-knob-size-value" for="classic-knob-size">100%</output></label>
+              <input type="range" id="classic-knob-size" min="50" max="125" step="1" value="100" />
+            </div>
+            <div class="style-slider">
+              <label for="classic-grid-irregularity">Grid irregularity <output id="classic-grid-irregularity-value" for="classic-grid-irregularity">0%</output></label>
+              <input type="range" id="classic-grid-irregularity" min="0" max="100" step="1" value="0" />
+            </div>
+            <div class="style-slider">
+              <label for="classic-knob-randomness">Knob position randomness <output id="classic-knob-randomness-value" for="classic-knob-randomness">0%</output></label>
+              <input type="range" id="classic-knob-randomness" min="0" max="100" step="1" value="0" />
+            </div>
+            <p class="control-hint">Zero irregularity keeps a regular grid; zero randomness centers every knob. The seed controls the variations. Large knobs adapt to fit neighboring cuts.</p>
           </section>
 
           <section class="control-section">
@@ -99,7 +118,7 @@
             <h2 class="section-header">Seeds <label class="pill-toggle" title="Show seed positions (red = current, hollow = initial anchors)"><input type="checkbox" id="seeds-visible" /><span class="pill-track"><span class="pill-knob"></span></span></label></h2>
           </section>
 
-          <section class="control-section">
+          <section class="control-section" id="whimsies-section">
             <h2 class="section-header">Whimsies <button type="button" id="add-whimsy" class="section-add-btn" title="Add a whimsy">+</button></h2>
             <ul id="whimsy-list" class="whimsy-list"></ul>
           </section>

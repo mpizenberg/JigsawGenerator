@@ -80,6 +80,8 @@ type BuildResultRaw = {
   width?: number;
   height?: number;
   piece_count?: number;
+  grid_columns?: number;
+  grid_rows?: number;
 };
 
 self.onmessage = async (e: MessageEvent<Request>) => {
@@ -138,6 +140,8 @@ self.onmessage = async (e: MessageEvent<Request>) => {
           width: result.width,
           height: result.height,
           piece_count: result.piece_count,
+          grid_columns: result.grid_columns,
+          grid_rows: result.grid_rows,
         },
       },
       transfers,

@@ -50,6 +50,7 @@ const SHAPE_DIM_MULTIPLIER: Record<string, number> = {
 const DEFAULT_SHAPE_DIM_MULTIPLIER = 1.9;
 
 function shapeDimMultiplier(): number {
+  if (isClassicGrid()) return 100 / parseFloat(classicKnobSizeInput.value);
   const key = borderShapeSelect.value || "rectangle";
   return SHAPE_DIM_MULTIPLIER[key] ?? DEFAULT_SHAPE_DIM_MULTIPLIER;
 }
@@ -67,6 +68,24 @@ let borderShapeSelect: HTMLSelectElement;
 let cellAlgorithmSelect: HTMLSelectElement;
 let poissonPolishSelect: HTMLSelectElement;
 let poissonPolishGroup: HTMLElement;
+let classicKnobSizeInput: HTMLInputElement;
+let classicGridIrregularityInput: HTMLInputElement;
+let classicKnobRandomnessInput: HTMLInputElement;
+
+function classicStyleControls() {
+  return [
+    { input: classicKnobSizeInput, key: "classic_knob_size", url: "ks", defaultValue: 100 },
+    { input: classicGridIrregularityInput, key: "classic_grid_irregularity", url: "gi", defaultValue: 0 },
+    { input: classicKnobRandomnessInput, key: "classic_knob_randomness", url: "kr", defaultValue: 0 },
+  ];
+}
+
+function syncClassicStyleControls(): void {
+  for (const { input } of classicStyleControls()) {
+    document.getElementById(`${input.id}-value`)!.textContent = `${input.value}%`;
+    input.disabled = input !== classicGridIrregularityInput && !knobsEnabledCheckbox.checked;
+  }
+}
 
 let pieceTargetInput: HTMLInputElement;
 let pieceSizeWarning: HTMLElement;
@@ -241,18 +260,35 @@ let edgesPath2D: Path2D | null = null;
 let borderPath2D: Path2D | null = null;
 let puzzleWidth = 0;
 let puzzleHeight = 0;
+let generatedPieceCount = 0;
 
 // ─── Config Builder ─────────────────────────────────────────
 
-/**
- * Toggle the Poisson polish dropdown's visibility based on the
- * current algorithm choice. Polish is meaningless for CVT (which has
- * its own fixed Lloyd iteration count), so hide it there.
- */
-function syncPoissonPolishVisibility(): void {
+let savedVoronoiBorder: string | null = null;
+
+function isClassicGrid(): boolean {
+  return cellAlgorithmSelect?.value === "classic";
+}
+
+/** Preserve Voronoi-only settings when switching to a classic grid. */
+function syncAlgorithmControls(): void {
   if (!poissonPolishGroup || !cellAlgorithmSelect) return;
   const isPoisson = cellAlgorithmSelect.value === "poisson";
   poissonPolishGroup.hidden = !isPoisson;
+  const classic = isClassicGrid();
+  document.getElementById("classic-grid-note")!.hidden = !classic;
+  document.getElementById("classic-style-controls")!.hidden = !classic;
+  document.getElementById("whimsies-section")!.hidden = classic;
+  if (classic) {
+    if (savedVoronoiBorder === null) savedVoronoiBorder = borderShapeSelect.value;
+    borderShapeSelect.value = "rectangle";
+    selectedWhimsyId = null;
+    interaction = { kind: "idle" };
+  } else if (savedVoronoiBorder !== null) {
+    borderShapeSelect.value = savedVoronoiBorder;
+    savedVoronoiBorder = null;
+  }
+  borderShapeSelect.disabled = classic;
 }
 
 function buildConfig(): object {
@@ -273,6 +309,11 @@ function buildConfig(): object {
   if (algoVal && algoVal !== "cvt") {
     config.cell_algorithm = algoVal;
   }
+  if (isClassicGrid()) {
+    for (const { input, key } of classicStyleControls()) {
+      config[key] = parseFloat(input.value) / 100;
+    }
+  }
   // Poisson polish count: only meaningful when algorithm is poisson.
   // Always include in the config when poisson is selected so the
   // backend default doesn't override the user's choice.
@@ -288,7 +329,7 @@ function buildConfig(): object {
   if (edgeKnobsEnabledCheckbox && edgeKnobsEnabledCheckbox.checked) {
     config.knob_outer_boundary = true;
   }
-  if (whimsies.length > 0) {
+  if (!isClassicGrid() && whimsies.length > 0) {
     config.whimsies = whimsies.map((w) => ({
       shape: w.shape,
       center_x: w.centerX,
@@ -706,6 +747,13 @@ function loadFromURL(): boolean {
   // Cell-generation algorithm. Defaults to "cvt" so legacy URLs
   // without `algo=` keep producing identical output.
   cellAlgorithmSelect.value = params.get("algo") ?? "cvt";
+  for (const { input, url, defaultValue } of classicStyleControls()) {
+    const raw = params.get(url);
+    const value = raw === null ? defaultValue : Number(raw);
+    input.value = String(Number.isFinite(value)
+      ? Math.max(Number(input.min), Math.min(Number(input.max), value))
+      : defaultValue);
+  }
   // Poisson polish iterations. Defaults to 3 (matches backend
   // default). Range clamped 0–10. Ignored when algo != poisson.
   const polishStr = params.get("polish");
@@ -715,7 +763,7 @@ function loadFromURL(): boolean {
       poissonPolishSelect.value = String(Math.max(0, Math.min(10, polish)));
     }
   }
-  syncPoissonPolishVisibility();
+  syncAlgorithmControls();
 
   // Whimsies: `wh=heart:200,150,60,0,0;star:100,80,40,45,3`
   // Each whimsy is `shape:cx,cy,size,rotation,subdivisions`,
@@ -769,6 +817,11 @@ function updateURL(): void {
   if (algoVal && algoVal !== "cvt") {
     params.set("algo", algoVal);
   }
+  if (isClassicGrid()) {
+    for (const { input, url, defaultValue } of classicStyleControls()) {
+      if (Number(input.value) !== defaultValue) params.set(url, input.value);
+    }
+  }
   // Poisson polish count. Only included when (a) algorithm is
   // poisson and (b) the value isn't the default 3 — keeps URLs
   // short for the common case.
@@ -778,7 +831,7 @@ function updateURL(): void {
       params.set("polish", polish);
     }
   }
-  if (whimsies.length > 0) {
+  if (!isClassicGrid() && whimsies.length > 0) {
     const encoded = whimsies
       .map(
         (w) =>
@@ -1316,6 +1369,7 @@ function cursorForCorner(dir: CornerDir): string {
 }
 
 function findWhimsyAt(mmX: number, mmY: number): WhimsyInstance | null {
+  if (isClassicGrid()) return null;
   // Iterate in reverse so the most-recently-added whimsy takes
   // priority on overlap — matches the user's "top" mental model.
   for (let i = whimsies.length - 1; i >= 0; i--) {
@@ -1327,7 +1381,7 @@ function findWhimsyAt(mmX: number, mmY: number): WhimsyInstance | null {
 // ─── Selection Overlay ──────────────────────────────────────
 
 function drawSelectionOverlay(c: CanvasRenderingContext2D): void {
-  if (selectedWhimsyId === null) return;
+  if (isClassicGrid() || selectedWhimsyId === null) return;
   const w = whimsies.find((x) => x.id === selectedWhimsyId);
   if (!w) return;
 
@@ -1479,13 +1533,20 @@ async function generatePuzzle(): Promise<void> {
 
   // Use WASM-returned piece count (accurate for boundary puzzles)
   const count = result.piece_count as number | undefined;
+  generatedPieceCount = count ?? 0;
   const borderVal = borderShapeSelect.value;
   if (count != null) {
     const suffixes: string[] = [];
+    if (result.grid_columns && result.grid_rows) {
+      suffixes.push(`${result.grid_columns} × ${result.grid_rows} classic grid`);
+      if (count !== parseInt(pieceTargetInput.value, 10)) {
+        suffixes.push(`target ${pieceTargetInput.value}`);
+      }
+    }
     if (borderVal && borderVal !== "rectangle") {
       suffixes.push(`${borderVal} border`);
     }
-    if (whimsies.length > 0) {
+    if (!isClassicGrid() && whimsies.length > 0) {
       const typed = parseInt(pieceTargetInput.value, 10) || 0;
       const fromWhimsies = Math.max(0, count - typed);
       suffixes.push(
@@ -1684,6 +1745,9 @@ async function main(): Promise<void> {
     "poisson-polish",
   ) as HTMLSelectElement;
   poissonPolishGroup = document.getElementById("poisson-polish-group")!;
+  classicKnobSizeInput = document.getElementById("classic-knob-size") as HTMLInputElement;
+  classicGridIrregularityInput = document.getElementById("classic-grid-irregularity") as HTMLInputElement;
+  classicKnobRandomnessInput = document.getElementById("classic-knob-randomness") as HTMLInputElement;
 
   pieceTargetInput = document.getElementById("piece-target") as HTMLInputElement;
   pieceSizeWarning = document.getElementById("piece-size-warning")!;
@@ -1744,6 +1808,7 @@ async function main(): Promise<void> {
     knobsEnabledCheckbox
       .closest(".pill-toggle")
       ?.classList.toggle("active", knobsEnabledCheckbox.checked);
+    syncClassicStyleControls();
     scheduleGenerate();
   });
 
@@ -1806,7 +1871,8 @@ async function main(): Promise<void> {
   // regen and toggle the polish-iterations control's visibility
   // (it's only meaningful for Poisson).
   cellAlgorithmSelect.addEventListener("change", () => {
-    syncPoissonPolishVisibility();
+    syncAlgorithmControls();
+    enforceConstraints();
     scheduleGenerate();
   });
 
@@ -1816,9 +1882,18 @@ async function main(): Promise<void> {
     scheduleGenerate();
   });
 
+  for (const { input } of classicStyleControls()) {
+    input.addEventListener("input", () => {
+      syncClassicStyleControls();
+      enforceConstraints();
+      scheduleGenerate();
+    });
+  }
+  syncClassicStyleControls();
+
   // Set initial visibility based on whatever URL/persisted state
   // chose at load time.
-  syncPoissonPolishVisibility();
+  syncAlgorithmControls();
 
   // Whimsies: open the shape picker; on close, add the selected shape.
   addWhimsyBtn.addEventListener("click", () => {
@@ -1977,7 +2052,8 @@ async function main(): Promise<void> {
       return;
     }
 
-    const w = whimsies.find((x) => x.id === interaction.id);
+    const whimsyId = interaction.id;
+    const w = whimsies.find((x) => x.id === whimsyId);
     if (!w) return;
     const mm = cursorToMm(e);
 
@@ -2178,11 +2254,12 @@ async function main(): Promise<void> {
     const svgContent = await requestCachedSvg().catch(() => "");
     if (!svgContent || !svgContent.startsWith("<svg")) return;
     const config = buildConfig() as Record<string, unknown>;
-    const pc = config.piece_count as number;
+    const pc = generatedPieceCount || (config.piece_count as number);
     const border = config.border_shape as string | undefined;
     const parts = ["puzzle", `${pc}pc`];
+    if (isClassicGrid()) parts.push("classic");
     if (border && border !== "rectangle") parts.push(border);
-    if (whimsies.length > 0) {
+    if (!isClassicGrid() && whimsies.length > 0) {
       parts.push(
         `${whimsies.length}whims${whimsies.length === 1 ? "y" : "ies"}`,
       );

@@ -31,6 +31,8 @@ export type BuildResult = {
   width: number;
   height: number;
   piece_count?: number;
+  grid_columns?: number;
+  grid_rows?: number;
 };
 
 /// Sentinel rejection value: a newer `requestBuild` invalidated this

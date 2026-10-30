@@ -33,7 +33,17 @@ After changing Rust code, re-run `npm run dev:wasm` — Vite does not trigger WA
 
 ## Current State
 
-The generator produces **rectangular puzzles** with:
+The generator offers three algorithms:
+
+- **Classic grid** — traditional four-sided pieces with matching tabs and sockets. Rows and columns are chosen for roughly square pieces; the target count is rounded to a complete grid (for example, 48 pieces at 297 × 210 mm gives an 8 × 6 grid). The footer shows the actual count and grid dimensions. Classic currently uses rectangular borders without whimsies.
+- **CVT** — relaxed Voronoi cells with organic, typically five- or six-sided pieces.
+- **Poisson** — Voronoi cells from Poisson disc sampling, with optional relaxation. Both Voronoi options support shaped borders and whimsy pieces.
+
+Choose an algorithm in **Pieces → Algorithm**. Existing shared links keep their original algorithm; classic links include `algo=classic`.
+
+For Classic grid, **Classic grid style** provides live sliders for **Knob size** (50–125%), **Grid irregularity** (0–100%, moving corners and gently curving sides), and **Knob position randomness** (0–100%, centered to varied positions). Variations are deterministic for a given seed and saved in shared links. Zero irregularity and randomness reproduce the original regular grid. Knobs adapt locally where needed to keep neighboring cuts apart; the pieces retain four sides. Grid curvature remains visible when knobs are disabled.
+
+Features include:
 
 - Configurable grid (rows × columns) and physical dimensions in mm or inches
 - Classic knob connectors with controls for tab size, taper, jitter, and offset randomization
